@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="pl">
+  <head>
+    <meta charset="utf-8" />
+    <title>Ćwiczenie 3 — API → tabela + filtr + sort</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      :root {
+        font-family: system-ui, Arial, sans-serif;
+      }
+      body {
+        margin: 0;
+        background: #fafafa;
+      }
+      .wrap {
+        max-width: 1100px;
+        margin: auto;
+        padding: 24px;
+      }
+      h1 {
+        margin: 0 0 16px;
+        font-size: 22px;
+      }
+      .controls {
+        display: flex;
+        gap: 10px;
+        margin: 12px 0 16px;
+      }
+      input,
+      select {
+        padding: 10px;
+        border: 1px solid #e5e7eb;
+        border-radius: 10px;
+        background: #fff;
+      }
+      input {
+        flex: 1;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        background: #fff;
+        border-radius: 14px;
+        overflow: hidden;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
+      }
+      th,
+      td {
+        padding: 12px 14px;
+        text-align: left;
+        vertical-align: top;
+        border-bottom: 1px solid #f0f0f0;
+      }
+      th {
+        background: #f9fafb;
+        font-weight: 700;
+      }
+      img {
+        width: 72px;
+        height: 72px;
+        object-fit: cover;
+        border-radius: 10px;
+        border: 1px solid #eee;
+      }
+      tbody tr:hover {
+        background: #fcfcfc;
+      }
+      .desc {
+        color: #4b5563;
+      }
+      .empty {
+        padding: 24px;
+        text-align: center;
+        color: #6b7280;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>Produkty</h1>
+      <div class="controls">
+        <input
+          id="filter"
+          type="text"
+          placeholder="Filtruj po frazie (tytuł/opis)"
+        />
+        <select id="sort">
+          <option value="orig">oryginalna kolejność</option>
+          <option value="asc">rosnąco</option>
+          <option value="desc">malejąco</option>
+        </select>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>zdjęcie</th>
+            <th>tytuł</th>
+            <th>opis</th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+      <div id="empty" class="empty" style="display: none">Brak wyników.</div>
+    </div>
+
+    <script>
+      const tbody = document.getElementById("tbody");
+      const filterInput = document.getElementById("filter");
+      const sortSelect = document.getElementById("sort");
+      const empty = document.getElementById("empty");
+      let original = [],
+        view = [];
+
+      function render(rows) {
+        tbody.innerHTML = "";
+        if (rows.length === 0) {
+          empty.style.display = "block";
+          return;
+        } else {
+          empty.style.display = "none";
+        }
+        rows.forEach((p) => {
+          const tr = document.createElement("tr");
+          const tdImg = document.createElement("td");
+          const img = document.createElement("img");
+          img.src = p.thumbnail || p.images?.[0] || "";
+          img.alt = p.title || "";
+          tdImg.appendChild(img);
+          const tdTitle = document.createElement("td");
+          tdTitle.textContent = p.title;
+          const tdDesc = document.createElement("td");
+          const small = document.createElement("div");
+          small.className = "desc";
+          small.textContent = p.description;
+          tdDesc.appendChild(small);
+          tr.append(tdImg, tdTitle, tdDesc);
+          tbody.appendChild(tr);
+        });
+      }
+
+      function apply() {
+        const q = filterInput.value.trim().toLowerCase();
+        let rows = original.filter((p) => {
+          const t = (p.title || "").toLowerCase();
+          const d = (p.description || "").toLowerCase();
+          return t.includes(q) || d.includes(q);
+        });
+        const mode = sortSelect.value;
+        if (mode === "asc")
+          rows = [...rows].sort((a, b) =>
+            a.title.localeCompare(b.title, "pl", { sensitivity: "base" })
+          );
+        else if (mode === "desc")
+          rows = [...rows].sort((a, b) =>
+            b.title.localeCompare(a.title, "pl", { sensitivity: "base" })
+          );
+        view = rows;
+        render(view);
+      }
+
+      fetch("https://dummyjson.com/products")
+        .then((r) => r.json())
+        .then((data) => {
+          original = (data.products || []).slice(0, 30);
+          view = original.slice();
+          render(view);
+        });
+
+      filterInput.addEventListener("input", apply);
+      sortSelect.addEventListener("change", apply);
+    </script>
+  </body>
+</html>
