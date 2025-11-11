@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="pl">
+  <head>
+    <meta charset="utf-8" />
+    <title>Flappy — ptak widoczny</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      :root {
+        font-family: system-ui, Arial, sans-serif;
+      }
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        background: #000;
+      }
+      #root {
+        position: relative;
+        height: 100%;
+      }
+      canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+        position: relative;
+        z-index: 1;
+        cursor: pointer;
+      }
+      .ui {
+        position: absolute;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        pointer-events: none;
+        z-index: 2;
+      }
+      .badge {
+        position: absolute;
+        right: 16px;
+        top: 12px;
+        background: rgba(0, 0, 0, 0.45);
+        color: #fff;
+        padding: 0.35rem 0.6rem;
+        border-radius: 0.6rem;
+        font-weight: 800;
+        letter-spacing: 0.5px;
+      }
+      .panel {
+        background: rgba(0, 0, 0, 0.6);
+        color: #fff;
+        padding: 24px;
+        border-radius: 16px;
+        text-align: center;
+        pointer-events: auto;
+        min-width: min(460px, 92vw);
+      }
+      h1 {
+        margin: 0.2rem 0 1rem;
+        font-size: 28px;
+      }
+      .btn {
+        margin-top: 12px;
+        padding: 10px 16px;
+        border: 0;
+        border-radius: 12px;
+        background: #facc15;
+        font-weight: 800;
+        cursor: pointer;
+      }
+      .small {
+        opacity: 0.85;
+        font-size: 13px;
+        margin-top: 6px;
+      }
+      .hidden {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root">
+      <canvas id="game"></canvas>
+      <div class="ui">
+        <div id="score" class="badge">0</div>
+        <div id="startPanel" class="panel">
+          <h1>Flappy Bird</h1>
+          <div class="small">Spacja lub klik — podbicie</div>
+          <div><button id="startBtn" class="btn">Start</button></div>
+        </div>
+        <div id="overPanel" class="panel hidden">
+          <h1 id="overTitle">Game Over</h1>
+          <div id="lastScore" class="small"></div>
+          <div
+            id="bestTable"
+            style="
+              display: grid;
+              grid-template-columns: auto auto;
+              gap: 6px;
+              justify-content: center;
+              margin-top: 10px;
+            "
+          ></div>
+          <div><button id="againBtn" class="btn">Zagraj ponownie</button></div>
+        </div>
+        <div id="ggPanel" class="panel hidden">
+          <h1>Gratulacje! Nowy rekord 🎉</h1>
+          <div class="small" id="ggInfo"></div>
+          <div><button id="ggBtn" class="btn">Dalej</button></div>
+        </div>
+      </div>
+    </div>
+    <audio id="music" loop src="assets/music.wav"></audio>
+    <audio id="sfxFlap" src="assets/flap.wav"></audio>
+    <audio id="sfxHit" src="assets/hit.wav"></audio>
+    <audio id="sfxScore" src="assets/score.wav"></audio>
+    <audio id="sfxGround" src="assets/ground.wav"></audio>
+    <script>
+      const cvs = document.getElementById("game"),
+        ctx = cvs.getContext("2d", { alpha: false }),
+        uiScore = document.getElementById("score"),
+        startPanel = document.getElementById("startPanel"),
+        overPanel = document.getElementById("overPanel"),
+        againBtn = document.getElementById("againBtn"),
+        startBtn = document.getElementById("startBtn"),
+        overTitle = document.getElementById("overTitle"),
+        bestTable = document.getElementById("bestTable"),
+        lastScoreEl = document.getElementById("lastScore"),
+        ggPanel = document.getElementById("ggPanel"),
+        ggBtn = document.getElementById("ggBtn"),
+        ggInfo = document.getElementById("ggInfo");
+      const music = document.getElementById("music"),
+        sfxFlap = document.getElementById("sfxFlap"),
+        sfxHit = document.getElementById("sfxHit"),
+        sfxScore = document.getElementById("sfxScore"),
+        sfxGround = document.getElementById("sfxGround");
+      let W = 0,
+        H = 0,
+        DPR = 1,
+        t0 = 0,
+        dt = 0,
+        raf = 0,
+        tGlobal = 0;
+      const img = (src) => {
+        const i = new Image();
+        i.src = src;
+        return i;
+      };
+      const assets = {
+        bg: img("assets/bg.png"),
+        ground: img("assets/ground.png"),
+        pipeTop: img("assets/pipe-top.png"),
+        pipeBottom: img("assets/pipe-bottom.png"),
+        boostGhost: img("assets/boost-ghost.png"),
+        boostFF: img("assets/boost-ff.png"),
+        foe: img("assets/foe.png"),
+      };
+      const S = { idle: 0, play: 1, fall: 2 };
+      let state = S.idle,
+        score = 0,
+        lastScore = 0,
+        best = loadBest();
+      const world = {
+        speed: 260,
+        gravity: 1700,
+        jump: -380,
+        gap: 180,
+        pipeDist: 240,
+        groundH: 110,
+      };
+      let bgX = 0,
+        groundX = 0,
+        spawnX = 0,
+        clouds = [];
+      const bird = { x: 0, y: 0, vy: 0, rot: 0, inv: 0 };
+      let pipes = [],
+        foes = [],
+        boosts = [];
+      function size() {
+        DPR = window.devicePixelRatio || 1;
+        W = Math.floor(cvs.clientWidth * DPR);
+        H = Math.floor(cvs.clientHeight * DPR);
+        cvs.width = W;
+        cvs.height = H;
+      }
+      function reset() {
+        score = 0;
+        uiScore.textContent = score;
+        bgX = groundX = spawnX = 0;
+        bird.x = W * 0.35;
+        bird.y = H * 0.45;
+        bird.vy = 0;
+        bird.rot = 0;
+        bird.inv = 0;
+        pipes.length = 0;
+        boosts.length = 0;
+        foes.length = 0;
+        clouds = new Array(10)
+          .fill(0)
+          .map(() => ({
+            x: Math.random() * W,
+            y: Math.random() * H * 0.45 + H * 0.05,
+            r: 20 + Math.random() * 40,
+            s: 0.2 + Math.random() * 0.4,
+          }));
+      }
+      function r(a, b) {
+        return Math.random() * (b - a) + a;
+      }
+      function spawnPipe() {
+        const g = r(H * 0.28, H * 0.62),
+          w = 84,
+          topH = Math.max(40, g - world.gap / 2),
+          botY = g + world.gap / 2,
+          botH = Math.max(40, H - world.groundH - botY);
+        pipes.push({
+          x: W + w,
+          top: { y: 0, h: topH },
+          bot: { y: botY, h: botH },
+          w,
+          scored: false,
+          alpha: bird.inv > 0 ? 0.45 : 1,
+        });
+      }
+      function spawnBoost() {
+        const type = Math.random() < 0.5 ? "ghost" : "ff",
+          y = r(H * 0.2, H * 0.65),
+          im = type === "ghost" ? assets.boostGhost : assets.boostFF;
+        boosts.push({
+          x: W + 64,
+          y,
+          sz: 34,
+          type,
+          img: im,
+          vy: Math.random() < 0.5 ? 30 : -30,
+        });
+      }
+      function spawnFoe() {
+        const y = r(H * 0.2, H * 0.65),
+          vy = r(-60, 60);
+        foes.push({ x: W + 64, y, vy, w: 36, h: 28 });
+      }
+      function flap() {
+        if (state !== S.play) return;
+        bird.vy = world.jump;
+        try {
+          sfxFlap.currentTime = 0;
+          sfxFlap.play();
+        } catch {}
+      }
+      function collideRect(ax, ay, aw, ah, bx, by, bw, bh) {
+        return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
+      }
+      function collideCircleRect(cx, cy, cr, rx, ry, rw, rh) {
+        const nx = Math.max(rx, Math.min(cx, rx + rw)),
+          ny = Math.max(ry, Math.min(cy, ry + rh));
+        const dx = cx - nx,
+          dy = cy - ny;
+        return dx * dx + dy * dy < cr * cr;
+      }
+      function loop(ts) {
+        if (!t0) t0 = ts;
+        dt = Math.min(0.033, (ts - t0) / 1000);
+        t0 = ts;
+        tGlobal += dt;
+        if (state !== S.idle) {
+          bgX = (bgX + world.speed * 0.12 * dt) % W;
+          groundX = (groundX + world.speed * dt) % W;
+          for (const c of clouds) {
+            c.x -= world.speed * c.s * 0.15 * dt;
+            if (c.x < -60) c.x = W + 60;
+          }
+        }
+        if (state === S.play) {
+          bird.vy += world.gravity * dt;
+          bird.y += bird.vy * dt;
+          bird.rot = Math.atan2(Math.min(240, Math.max(-260, bird.vy)), 250);
+          spawnX += world.speed * dt;
+          if (spawnX > world.pipeDist) {
+            spawnX = 0;
+            spawnPipe();
+            if (Math.random() < 0.38) spawnBoost();
+            if (Math.random() < 0.22) spawnFoe();
+          }
+          for (const p of pipes) {
+            p.x -= world.speed * dt;
+            p.alpha = bird.inv > 0 ? 0.45 : 1;
+          }
+          for (const b of boosts) {
+            b.x -= world.speed * dt;
+            b.y += b.vy * dt;
+            if (b.y < 50 || b.y > H - 200) b.vy *= -1;
+          }
+          for (const f of foes) {
+            f.x -= world.speed * dt * 1.08;
+            f.y += f.vy * dt;
+            if (f.y < 40 || f.y > H - 200) f.vy *= -1;
+          }
+          pipes = pipes.filter((p) => p.x > -220);
+          boosts = boosts.filter((b) => b.x > -140);
+          foes = foes.filter((f) => f.x > -140);
+          for (const p of pipes) {
+            if (!p.scored && p.x + p.w < bird.x) {
+              p.scored = true;
+              score++;
+              uiScore.textContent = score;
+              try {
+                sfxScore.currentTime = 0;
+                sfxScore.play();
+              } catch {}
+            }
+            if (bird.inv <= 0) {
+              const cr = 16,
+                cx = bird.x,
+                cy = bird.y;
+              if (
+                collideCircleRect(cx, cy, cr, p.x, p.top.y, p.w, p.top.h) ||
+                collideCircleRect(cx, cy, cr, p.x, p.bot.y, p.w, p.bot.h)
+              )
+                state = S.fall;
+            }
+          }
+          for (const f of foes) {
+            if (
+              bird.inv <= 0 &&
+              collideRect(
+                bird.x - 16,
+                bird.y - 12,
+                32,
+                24,
+                f.x - 18,
+                f.y - 14,
+                36,
+                28
+              )
+            )
+              state = S.fall;
+          }
+          for (const b of boosts) {
+            if (
+              collideRect(
+                bird.x - 16,
+                bird.y - 12,
+                32,
+                24,
+                b.x - b.sz / 2,
+                b.y - b.sz / 2,
+                b.sz,
+                b.sz
+              )
+            ) {
+              if (b.type === "ghost") {
+                bird.inv = 4;
+              } else {
+                score += 5;
+                uiScore.textContent = score;
+                let k = 0;
+                const ff = () => {
+                  k++;
+                  world.speed = 440;
+                  if (k > 45) world.speed = 260;
+                  else requestAnimationFrame(ff);
+                };
+                requestAnimationFrame(ff);
+              }
+              b.x = -999;
+            }
+          }
+          if (bird.inv > 0) bird.inv -= dt;
+          if (bird.y > H - world.groundH - 10) state = S.fall;
+        }
+        if (state === S.fall) {
+          try {
+            sfxHit.currentTime = 0;
+            sfxHit.play();
+          } catch {}
+          bird.vy += world.gravity * dt;
+          bird.y += bird.vy * dt;
+          bird.rot = Math.atan2(Math.min(260, bird.vy), 220);
+          if (bird.y > H - world.groundH - 6) {
+            try {
+              sfxGround.currentTime = 0;
+              sfxGround.play();
+            } catch {}
+            endGame();
+            state = S.idle;
+          }
+        }
+        draw();
+        raf = requestAnimationFrame(loop);
+      }
+      function drawVectorBird(c) {
+        const flap = Math.sin(tGlobal * 12) * 0.5 + 0.5;
+        c.fillStyle = "#000";
+        c.globalAlpha = 0.12;
+        c.beginPath();
+        c.ellipse(0, 10, 18, 8, 0, 0, Math.PI * 2);
+        c.fill();
+        c.globalAlpha = 1;
+        c.fillStyle = "#f2c94c";
+        c.beginPath();
+        c.ellipse(0, 0, 18, 14, 0, 0, Math.PI * 2);
+        c.fill();
+        c.fillStyle = "#f2994a";
+        c.beginPath();
+        c.moveTo(10, 0);
+        c.lineTo(20, -5);
+        c.lineTo(20, 5);
+        c.closePath();
+        c.fill();
+        c.fillStyle = "#fff";
+        c.beginPath();
+        c.arc(-4, -5, 5, 0, Math.PI * 2);
+        c.fill();
+        c.fillStyle = "#000";
+        c.beginPath();
+        c.arc(-2, -5, 2, 0, Math.PI * 2);
+        c.fill();
+        c.save();
+        c.translate(-8, 3);
+        c.rotate(-0.9 + flap * 1.8);
+        c.fillStyle = "#f1c40f";
+        c.beginPath();
+        c.ellipse(0, 0, 12, 7, 0, 0, Math.PI * 2);
+        c.fill();
+        c.restore();
+        c.strokeStyle = "#000";
+        c.lineWidth = 1;
+        c.globalAlpha = 0.15;
+        c.beginPath();
+        c.ellipse(0, 0, 18, 14, 0, 0, Math.PI * 2);
+        c.stroke();
+        c.globalAlpha = 1;
+      }
+      function draw() {
+        const w = W,
+          h = H;
+        const bg = assets.bg.complete ? assets.bg : null,
+          gr = assets.ground.complete ? assets.ground : null;
+        if (bg) {
+          const sw = bg.width,
+            sh = bg.height,
+            scale = Math.max(w / sw, h / sh),
+            rw = sw * scale,
+            rh = sh * scale,
+            x = -(bgX % rw);
+          for (let i = -1; i <= Math.ceil(w / rw) + 1; i++)
+            ctx.drawImage(bg, x + i * rw, 0, rw, rh);
+        } else {
+          ctx.fillStyle = "#8ed0ef";
+          ctx.fillRect(0, 0, w, h);
+        }
+        ctx.globalAlpha = 0.85;
+        for (const c of clouds) {
+          ctx.beginPath();
+          ctx.fillStyle = "#fff";
+          ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2);
+          ctx.arc(c.x + c.r * 0.9, c.y + 4, c.r * 0.8, 0, Math.PI * 2);
+          ctx.arc(c.x - c.r * 0.8, c.y + 6, c.r * 0.7, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+        for (const p of pipes) {
+          ctx.globalAlpha = p.alpha;
+          if (assets.pipeTop.complete && assets.pipeBottom.complete) {
+            ctx.drawImage(assets.pipeTop, p.x, 0, p.w, p.top.h);
+            ctx.drawImage(
+              assets.pipeBottom,
+              p.x,
+              p.bot.y,
+              p.w,
+              h - world.groundH - p.bot.y
+            );
+          } else {
+            ctx.fillStyle = "#2ecc71";
+            ctx.fillRect(p.x, 0, p.w, p.top.h);
+            ctx.fillStyle = "#27ae60";
+            ctx.fillRect(p.x + 6, 0, p.w - 12, Math.max(0, p.top.h - 10));
+            ctx.fillStyle = "#2ecc71";
+            ctx.fillRect(p.x, p.bot.y, p.w, h - world.groundH - p.bot.y);
+            ctx.fillStyle = "#27ae60";
+            ctx.fillRect(
+              p.x + 6,
+              p.bot.y + 10,
+              p.w - 12,
+              h - world.groundH - p.bot.y - 20
+            );
+          }
+          ctx.globalAlpha = 1;
+        }
+        for (const f of foes) {
+          if (assets.foe.complete)
+            ctx.drawImage(assets.foe, f.x - 18, f.y - 14, 36, 28);
+          else {
+            ctx.fillStyle = "#e74c3c";
+            ctx.fillRect(f.x - 18, f.y - 14, 36, 28);
+          }
+        }
+        for (const b of boosts) {
+          if (b.img.complete)
+            ctx.drawImage(b.img, b.x - b.sz / 2, b.y - b.sz / 2, b.sz, b.sz);
+          else {
+            ctx.fillStyle = "#facc15";
+            ctx.beginPath();
+            ctx.arc(b.x, b.y, b.sz / 2, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+        ctx.save();
+        ctx.translate(bird.x, bird.y);
+        ctx.rotate(bird.rot);
+        drawVectorBird(ctx);
+        ctx.restore();
+        if (gr) {
+          const gh = world.groundH,
+            sw = gr.width,
+            scale = w / sw,
+            rw = sw * scale,
+            rh = gh,
+            x = -(groundX % rw);
+          for (let i = -1; i <= Math.ceil(w / rw) + 1; i++)
+            ctx.drawImage(gr, x + i * rw, h - rh, rw, rh);
+        } else {
+          ctx.fillStyle = "#d35400";
+          ctx.fillRect(0, h - world.groundH, w, world.groundH);
+        }
+      }
+      function endGame() {
+        lastScore = score;
+        saveBest(score);
+        const top = loadBest();
+        showGameOver(top);
+      }
+      function showGameOver(bst) {
+        uiScore.textContent = score;
+        startPanel.classList.add("hidden");
+        ggPanel.classList.add("hidden");
+        overPanel.classList.remove("hidden");
+        overTitle.textContent = "Game Over";
+        bestTable.innerHTML = "";
+        const arr = bst.slice(0, 5),
+          lab = ["1.", "2.", "3.", "4.", "5."];
+        for (let i = 0; i < 5; i++) {
+          const v = arr[i] || 0;
+          const a = document.createElement("div"),
+            b = document.createElement("div");
+          a.textContent = lab[i];
+          b.textContent = v;
+          bestTable.append(a, b);
+        }
+        lastScoreEl.textContent = "Twój wynik: " + lastScore;
+        music.pause();
+      }
+      function startGame() {
+        reset();
+        state = S.play;
+        startPanel.classList.add("hidden");
+        overPanel.classList.add("hidden");
+        ggPanel.classList.add("hidden");
+        music.currentTime = 0;
+        music.play().catch(() => {});
+        t0 = 0;
+      }
+      function loadBest() {
+        try {
+          const s = localStorage.getItem("fl_best_v1");
+          if (!s) return [];
+          return JSON.parse(s) || [];
+        } catch {
+          return [];
+        }
+      }
+      function saveBest(v) {
+        const arr = loadBest();
+        arr.push(v);
+        arr.sort((a, b) => b - a);
+        const out = arr.slice(0, 5);
+        try {
+          localStorage.setItem("fl_best_v1", JSON.stringify(out));
+        } catch {}
+      }
+      function key(e) {
+        if (e.code === "Space") {
+          e.preventDefault();
+          if (state === S.idle) {
+            startGame();
+          } else if (state === S.play) {
+            flap();
+          }
+        }
+      }
+      function tap() {
+        if (state === S.idle) {
+          startGame();
+        } else if (state === S.play) {
+          flap();
+        }
+      }
+      window.addEventListener("resize", size);
+      window.addEventListener("keydown", key);
+      cvs.addEventListener("pointerdown", tap);
+      againBtn.addEventListener("click", startGame);
+      startBtn.addEventListener("click", startGame);
+      ggBtn.addEventListener("click", () => {
+        overTitle.textContent = "Brawo!";
+        overPanel.classList.remove("hidden");
+        ggPanel.classList.add("hidden");
+      });
+      size();
+      reset();
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(loop);
+    </script>
+  </body>
+</html>

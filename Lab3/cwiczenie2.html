@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="pl">
+  <head>
+    <meta charset="utf-8" />
+    <title>Ćwiczenie 2 — Generator haseł</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      :root {
+        font-family: system-ui, Arial, sans-serif;
+      }
+      body {
+        display: grid;
+        place-content: center;
+        min-height: 100dvh;
+        margin: 0;
+        background: #fafafa;
+      }
+      .card {
+        background: #fff;
+        padding: 24px;
+        border-radius: 16px;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+        width: min(520px, 94vw);
+      }
+      h1 {
+        margin: 0 0 16px;
+        font-size: 22px;
+      }
+      .grid {
+        display: grid;
+        gap: 12px;
+      }
+      .row {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+      }
+      label {
+        flex: 1;
+      }
+      input[type="text"] {
+        flex: 1;
+        padding: 10px;
+        border: 1px solid #e5e7eb;
+        border-radius: 10px;
+      }
+      .actions {
+        display: flex;
+        gap: 10px;
+        margin-top: 8px;
+      }
+      button {
+        flex: 1;
+        padding: 12px;
+        border-radius: 10px;
+        border: 1px solid #111827;
+        background: #111827;
+        color: #fff;
+        font-weight: 600;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="card">
+      <h1>Generator haseł</h1>
+      <div class="grid">
+        <div class="row">
+          <label for="minLen">Minimalna długość</label>
+          <input
+            id="minLen"
+            type="text"
+            inputmode="numeric"
+            placeholder="np. 8"
+          />
+        </div>
+        <div class="row">
+          <label for="maxLen">Maksymalna długość</label>
+          <input
+            id="maxLen"
+            type="text"
+            inputmode="numeric"
+            placeholder="np. 16"
+          />
+        </div>
+        <div class="row">
+          <label for="upper">Zawiera wielkie litery?</label>
+          <input id="upper" type="checkbox" />
+        </div>
+        <div class="row">
+          <label for="special">Zawiera znaki specjalne?</label>
+          <input id="special" type="checkbox" />
+        </div>
+        <div class="actions">
+          <button id="gen">Wygeneruj hasło</button>
+        </div>
+      </div>
+    </main>
+
+    <script>
+      const minLen = document.getElementById("minLen");
+      const maxLen = document.getElementById("maxLen");
+      const upper = document.getElementById("upper");
+      const special = document.getElementById("special");
+      const gen = document.getElementById("gen");
+
+      function rand(n) {
+        return Math.floor(Math.random() * n);
+      }
+      function pick(str) {
+        return str[rand(str.length)];
+      }
+      function shuffle(arr) {
+        for (let i = arr.length - 1; i > 0; i--) {
+          const j = rand(i + 1);
+          [arr[i], arr[j]] = [arr[j], arr[i]];
+        }
+        return arr;
+      }
+
+      gen.addEventListener("click", () => {
+        const min = parseInt(minLen.value, 10);
+        const max = parseInt(maxLen.value, 10);
+        if (
+          !Number.isInteger(min) ||
+          !Number.isInteger(max) ||
+          min < 1 ||
+          max < min
+        ) {
+          alert("Podaj poprawne długości (min ≥ 1, max ≥ min).");
+          return;
+        }
+
+        const base = "abcdefghijklmnopqrstuvwxyz0123456789";
+        const up = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        const sp = "!@#$%^&*()-_=+[]{};:,.<>?/|~";
+        let pool = base;
+        if (upper.checked) pool += up;
+        if (special.checked) pool += sp;
+
+        const len = min + rand(max - min + 1);
+        const req = [];
+        if (upper.checked) req.push(pick(up));
+        if (special.checked) req.push(pick(sp));
+        const res = req.slice();
+        while (res.length < len) res.push(pick(pool));
+        shuffle(res);
+        alert(res.join(""));
+      });
+    </script>
+  </body>
+</html>
